@@ -1937,7 +1937,7 @@ initStore();
 if("serviceWorker" in navigator){
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").then(reg => {
-      const ask = () => { try{ if(!localStorage.getItem("pv-audio-20261029001417") && navigator.serviceWorker.controller){ navigator.serviceWorker.controller.postMessage("precache-audio"); localStorage.setItem("pv-audio-20261029001417", "1"); } }catch(e){} };
+      const ask = () => { try{ if(!localStorage.getItem("pv-audio-1fa577ed") && navigator.serviceWorker.controller){ navigator.serviceWorker.controller.postMessage("precache-audio"); localStorage.setItem("pv-audio-1fa577ed", "1"); } }catch(e){} };
       if(navigator.serviceWorker.controller) ask(); else navigator.serviceWorker.addEventListener("controllerchange", ask);
     }).catch(() => {});
   });
