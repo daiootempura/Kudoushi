@@ -377,6 +377,17 @@ details.more .inner{display:grid;gap:14px}
 .still .phase span{animation:none;opacity:1}
 .feature .phase{justify-content:flex-start;margin:0 0 4px}
 .cell.res .phase{margin-top:4px}
+.xlinks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.xl{position:relative;display:block;padding:12px 30px 12px 14px;border:1px solid var(--line);background:var(--surface);border-radius:14px;color:var(--ink);text-decoration:none}
+.xl:active{background:var(--surface-2)}
+.xl b{display:block;font-size:16px;font-weight:600}
+.xl span{display:block;font-size:12px;color:var(--ink-2);line-height:1.5;margin-top:2px}
+.xl svg{position:absolute;right:10px;top:50%;width:16px;height:16px;margin-top:-8px;color:var(--ink-3)}
+.lines li{padding-right:12px}
+.lines .src{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-3);margin-top:4px}
+.dline{border:0;background:none;color:var(--verb);font-size:12.5px;font-weight:700;padding:2px 0}
+.lineform{display:grid;gap:12px;margin-top:12px}
+.note-item span.en{font-size:15px;color:var(--ink);font-family:var(--f-en)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tab) + env(safe-area-inset-bottom,0px) + 14px);z-index:40;background:var(--ink);color:var(--bg);padding:9px 18px;border-radius:999px;font-size:13.5px;font-weight:500;max-width:calc(100% - 32px);box-shadow:0 6px 24px rgba(0,0,0,.18)}
 /* ===== SVG art ===== */
 .vb{color:var(--verb)}
@@ -832,19 +843,19 @@ let ALL = BUILT.slice(), byId = {};
 
 const STANDALONE = !!window.PV_STANDALONE;  /* スマホにインストールする単体版 */
 /* ===== 保存(じぶんのメモ・追加・覚えた) ===== */
-const store = {notes:{}, learned:new Set(), mine:[], mode:"local"};
+const store = {notes:{}, learned:new Set(), mine:[], lines:[], mode:"local"};
 let db = null;
 const LS = "pvimg-v2";
 function loadLocal(){
   try{
     const o = JSON.parse(localStorage.getItem(LS) || "null");
-    if(o){ store.notes = o.notes||{}; store.learned = new Set(o.learned||[]); store.mine = o.mine||[]; }
+    if(o){ store.notes = o.notes||{}; store.learned = new Set(o.learned||[]); store.mine = o.mine||[]; store.lines = o.lines||[]; }
     else { const old = JSON.parse(localStorage.getItem("pvimg-learned")||"[]"); store.learned = new Set(old); }
   }catch(e){}
 }
 function saveLocal(){
   if(store.mode!=="local") return;
-  try{ localStorage.setItem(LS, JSON.stringify({notes:store.notes, learned:[...store.learned], mine:store.mine})); }catch(e){}
+  try{ localStorage.setItem(LS, JSON.stringify({notes:store.notes, learned:[...store.learned], mine:store.mine, lines:store.lines})); }catch(e){}
 }
 function rebuild(){
   const mine = store.mine.map(m => ({
@@ -863,7 +874,7 @@ async function initStore(){
   if(!db) return;
   store.mode = "db";
   const localLearned = [...store.learned];
-  store.notes = {}; store.learned = new Set(); store.mine = [];
+  store.notes = {}; store.learned = new Set(); store.mine = []; store.lines = [];
   let first = true;
   db.collection("notes").onSnapshot(s => {
     store.notes = {}; s.docs.forEach(d => { const t = (d.data()||{}).text; if(t) store.notes[d.id] = t; });
@@ -878,6 +889,10 @@ async function initStore(){
   db.collection("mine").onSnapshot(s => {
     store.mine = s.docs.map(d => ({...d.data(), _id:d.id})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     rebuild(); onStoreChange(true);
+  }, () => {});
+  db.collection("lines").onSnapshot(s => {
+    store.lines = s.docs.map(d => ({...d.data(), _id:d.id})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    onStoreChange();
   }, () => {});
   onStoreChange(true);
 }
@@ -901,6 +916,14 @@ async function addMine(obj){
   if(store.mode==="db"){ await db.collection("mine").add(obj); }
   else { store.mine.unshift({...obj, _id:"l"+Date.now()}); saveLocal(); rebuild(); onStoreChange(true); }
 }
+async function addLine(obj){
+  if(store.mode==="db"){ await db.collection("lines").add(obj); }
+  else { store.lines.unshift({...obj, _id:"s"+Date.now()}); saveLocal(); onStoreChange(); }
+}
+async function delLine(_id){
+  if(store.mode==="db"){ await db.collection("lines").doc(_id).delete(); }
+  else { store.lines = store.lines.filter(m=>m._id!==_id); saveLocal(); onStoreChange(); }
+}
 async function delMine(_id){
   if(store.mode==="db"){ await db.collection("mine").doc(_id).delete(); }
   else { store.mine = store.mine.filter(m=>m._id!==_id); saveLocal(); rebuild(); onStoreChange(true); }
@@ -914,6 +937,8 @@ function onStoreChange(structural){
   });
   const lb = document.getElementById("sh-learn");
   if(lb) lb.setAttribute("aria-pressed", store.learned.has(lb.dataset.id));
+  const box = document.getElementById("lines-box");
+  if(box) box.innerHTML = linesHTML(box.dataset.id);
 }
 
 /* ===== 絵: 動詞 ===== */
@@ -1232,6 +1257,7 @@ function speak(text){
 const SPK = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>`;
 const sayBtn = (text, big, v) => `<button class="say${big?" big":""}" data-say="${esc(text)}" data-v="${esc(v||"")}" aria-label="読み上げる">${SPK}</button>`;
 document.addEventListener("click", e => {
+  if(e.target.closest("button,a,input,textarea")&&!e.target.closest("button[data-say]")) return;
   const b = e.target.closest("[data-say]"); if(!b) return;
   say(b.dataset.say, b.dataset.v);
   document.querySelectorAll(".playing").forEach(x=>x.classList.remove("playing"));
@@ -1438,6 +1464,22 @@ function renderDetail(id){
       ${sameP.length ? `<div class="sib"><p class="sibl">ほかの動詞 ＋ <span class="en p">${esc(e.p)}</span></p><div class="chips">${sameP.map(y=>`<button class="chip pc" data-open="${esc(y.id)}">${esc(label(y))}</button>`).join("")}</div><button class="more-link" data-cmp="part" data-key="${esc(e.p)}">${esc(e.p)} を並べて比べる${ICON.right}</button></div>` : ""}
       ${sets.length ? `<div class="sib"><p class="sibl">似ている組</p><div class="chips">${sets.map(([s,i])=>`<button class="chip jc" data-cmp="set" data-key="${i}">${esc(s.title)}</button>`).join("")}</div></div>` : ""}
     </section>` : ""}
+    <section class="sec"><h3 class="sh">実際の使われ方</h3>
+      <div class="xlinks">
+        <a class="xl" href="https://www.playphrase.me/#/search?q=${encodeURIComponent(label(e))}" target="_blank" rel="noopener"><b class="en">PlayPhrase</b><span>映画・ドラマの場面で聞く</span>${ICON.right}</a>
+        <a class="xl" href="https://youglish.com/pronounce/${encodeURIComponent(label(e))}/english" target="_blank" rel="noopener"><b class="en">YouGlish</b><span>YouTube の英語で聞く</span>${ICON.right}</a>
+      </div>
+      <h3 class="sh" style="margin-top:22px">見つけたセリフ<small>タップで読み上げ</small></h3>
+      <div id="lines-box" data-id="${esc(e.id)}">${linesHTML(e.id)}</div>
+      <details class="md"><summary>セリフを記録する${ICON.chev}</summary>
+        <form class="lineform" data-id="${esc(e.id)}" autocomplete="off">
+          <div class="fld"><label for="ln-text">聞いたセリフ(英語)</label><textarea id="ln-text" rows="2" class="en" required placeholder="例:I’m not gonna give up."></textarea></div>
+          <div class="fld"><label for="ln-src">作品名・話数</label><input class="tf" id="ln-src" placeholder="例:○○ 第3話"></div>
+          <div class="fld"><label for="ln-ja">訳・場面のメモ(なくてもいい)</label><input class="tf" id="ln-ja"></div>
+          <div class="mrow"><button type="submit" class="btn primary">記録する</button><span class="saved" id="ln-st" aria-live="polite"></span></div>
+        </form>
+      </details>
+    </section>
     <section class="sec">${memoHTML(e.id)}</section>
     ${STANDALONE ? "" : `<section class="sec"><h3 class="sh"><label for="askq">Claude に聞く</label></h3>
       <div class="askrow"><input id="askq" class="tf" placeholder="${esc(label(e))} について質問する" enterkeyhint="send"><button class="btn primary" id="askbtn">聞く</button></div>
@@ -1461,6 +1503,29 @@ sheet.addEventListener("click", e=>{
   const l = e.target.closest("#sh-learn");
   if(l){ toggleLearned(l.dataset.id).catch(()=>{}); return; }
   if(e.target.closest("#askbtn")) askClaude();
+});
+function linesHTML(id){
+  const ls = store.lines.filter(l=>l.pv===id);
+  if(!ls.length) return `<p class="emptyline">アニメやドラマで聞いたら、下の「セリフを記録する」から残そう。</p>`;
+  return `<ul class="exl lines">${ls.map(l=>`<li data-say="${esc(l.text)}" data-v=""><span class="e en">${esc(l.text)}</span>${l.ja?`<span class="j">${esc(l.ja)}</span>`:""}<span class="src">${esc(l.src||"出典なし")}<button class="dline" data-dline="${esc(l._id)}">${lineArmed===l._id?"本当に削除":"削除"}</button></span></li>`).join("")}</ul>`;
+}
+let lineArmed = null;
+sheet.addEventListener("submit", async e=>{
+  const f = e.target.closest(".lineform"); if(!f) return;
+  e.preventDefault();
+  const text = f.querySelector("#ln-text").value.trim(), st = f.querySelector("#ln-st");
+  if(!text){ st.textContent = "セリフを入れてください。"; return; }
+  st.textContent = "保存中…";
+  try{
+    await addLine({pv:f.dataset.id, text, src:f.querySelector("#ln-src").value.trim(), ja:f.querySelector("#ln-ja").value.trim(), createdAt:Date.now()});
+    f.reset(); st.textContent = "記録した";
+  }catch(err){ st.textContent = "保存できなかった。もう一度押してください。"; }
+});
+document.addEventListener("click", async e=>{
+  const d = e.target.closest("[data-dline]"); if(!d) return;
+  if(lineArmed !== d.dataset.dline){ lineArmed = d.dataset.dline; onStoreChange(); return; }
+  lineArmed = null; try{ await delLine(d.dataset.dline); }catch(err){}
+  onStoreChange();
 });
 sheet.addEventListener("keydown", e=>{ if(e.key==="Enter" && e.target.id==="askq") askClaude(); });
 document.addEventListener("keydown", e=>{
@@ -1685,12 +1750,15 @@ function renderMe(){
     <p class="meta">保存先：${STANDALONE ? "このスマホの中" : store.mode==="db" ? "このアプリ(どの端末で開いても同じ)" : "この端末のブラウザだけ"}</p>
     <h3 class="grp2">バックアップ</h3>
     <div class="card">
-      <p class="pnote" style="margin-bottom:0">${STANDALONE ? "メモ・追加した句動詞・覚えた印を1つのファイルにまとめる。機種変更のときや、Claude 版へ移すときに使う。" : "スマホのアプリ版で「書き出す」したファイルを読み込むと、ここに合流する。合流した内容は Claude も読める。"}</p>
+      <p class="pnote" style="margin-bottom:0">${STANDALONE ? "メモ・セリフ帳・追加した句動詞・覚えた印を1つのファイルにまとめる。機種変更のときや、Claude 版へ移すときに使う。" : "スマホのアプリ版で「書き出す」したファイルを読み込むと、ここに合流する。合流した内容は Claude も読める。"}</p>
       <div class="mrow">${STANDALONE ? `<button class="btn primary" id="bk-out">書き出す</button>` : ""}<label class="btn" for="bk-in">読み込む</label><input type="file" id="bk-in" accept="application/json,.json" hidden><span class="saved" id="bkst" aria-live="polite"></span></div>
     </div>
     <h3 class="grp2">追加した句動詞<span class="n">${mine.length}</span></h3>
     ${mine.length ? `<div class="rows">${mine.map(e=>`<div class="myrow">${rowHTML(e)}<button class="btn danger del" data-del="${esc(e._id)}">${delArmed===e._id?"本当に削除":"削除"}</button></div>`).join("")}</div>`
       : `<p class="emptyline">まだない。上の「句動詞を追加」から1つ足してみよう。</p>`}
+    <h3 class="grp2">セリフ帳<span class="n">${store.lines.length}</span></h3>
+    ${store.lines.length ? `<div class="rows">${store.lines.map(l=>`<button class="note-item" data-open="${esc(l.pv)}"><b class="en">${esc(byId[l.pv] ? label(byId[l.pv]) : l.pv)}</b><span class="en">“${esc(l.text)}”</span><span>${esc(l.src||"")}</span></button>`).join("")}</div>`
+      : `<p class="emptyline">句動詞のページの「セリフを記録する」で残すと、ここに集まる。</p>`}
     <h3 class="grp2">メモ<span class="n">${noteKeys.length}</span></h3>
     ${noteKeys.length ? `<div class="rows">${noteKeys.map(k=>`<button class="note-item" data-note="${esc(k)}"><b class="en">${esc(nlabel(k))}</b><span>${esc(store.notes[k])}</span></button>`).join("")}</div>`
       : `<p class="emptyline">各ページの「自分のメモ」に書くと、ここに集まる。</p>`}`;
@@ -1709,7 +1777,7 @@ document.getElementById("v-me").addEventListener("click", async e=>{
 });
 /* バックアップの書き出し・読み込み */
 function exportBackup(){
-  const data = {app:"kudoushi", v:1, at:new Date().toISOString(), notes:store.notes, learned:[...store.learned], mine:store.mine};
+  const data = {app:"kudoushi", v:1, at:new Date().toISOString(), notes:store.notes, learned:[...store.learned], mine:store.mine, lines:store.lines};
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], {type:"application/json"}));
   a.download = `kudoushi-${new Date().toISOString().slice(0,10)}.json`;
@@ -1728,21 +1796,27 @@ async function importBackup(file){
     if(!cur) notes[k] = v; else if(!cur.includes(v)) notes[k] = cur + "\n\n" + v;
   }
   const learned = [...new Set([...store.learned, ...(o.learned||[])])];
+  const lsig = l => [l.createdAt, l.pv, l.text].join("|");
+  const haveL = new Set(store.lines.map(lsig));
+  const newLines = (o.lines||[]).filter(l=>l && l.text && !haveL.has(lsig(l)));
   if(store.mode==="db"){
     for(const [k,v] of Object.entries(notes)) await db.collection("notes").doc(k).set({text:v, updatedAt:Date.now()});
     await db.doc("state/learned").set({ids:learned});
     for(const m of newMine){ const {_id, ...rest} = m; await db.collection("mine").add(rest); }
+    for(const l of newLines){ const {_id, ...rest} = l; await db.collection("lines").add(rest); }
   }else{
     Object.assign(store.notes, notes); store.learned = new Set(learned);
     newMine.forEach((m,i)=>store.mine.unshift({...m, _id:"l"+Date.now()+"_"+i}));
+    newLines.forEach((l,i)=>store.lines.unshift({...l, _id:"s"+Date.now()+"_"+i}));
+    store.lines.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     saveLocal(); rebuild(); onStoreChange(true);
   }
-  return {notes:Object.keys(notes).length, mine:newMine.length};
+  return {notes:Object.keys(notes).length, mine:newMine.length, lines:newLines.length};
 }
 document.getElementById("v-me").addEventListener("change", async e=>{
   if(e.target.id!=="bk-in" || !e.target.files[0]) return;
   const st = document.getElementById("bkst"); st.textContent = "読み込み中…";
-  try{ const r = await importBackup(e.target.files[0]); renderMe(); document.getElementById("bkst").textContent = `メモ ${r.notes}件・句動詞 ${r.mine}件を合流した`; }
+  try{ const r = await importBackup(e.target.files[0]); renderMe(); document.getElementById("bkst").textContent = `メモ ${r.notes}件・句動詞 ${r.mine}件・セリフ ${r.lines}件を合流した`; }
   catch(err){ st.textContent = "読み込めなかった。書き出したファイルを選んでください。"; }
   e.target.value = "";
 });
@@ -1854,7 +1928,7 @@ setStill(!!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: red
 
 loadLocal(); rebuild();
 renderFeature(); renderFilters(); renderList(); renderParts();
-if(location.hash.length > 1) applyHash();
+if(location.hash.length > 1){ applyHash(); detailDepth = 0; }  /* 開いた直後の詳細から「戻る」でアプリを抜けないように */
 initStore();
 </script>
 
@@ -1863,7 +1937,7 @@ initStore();
 if("serviceWorker" in navigator){
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").then(reg => {
-      const ask = () => { try{ if(!localStorage.getItem("pv-audio-20261028235429") && navigator.serviceWorker.controller){ navigator.serviceWorker.controller.postMessage("precache-audio"); localStorage.setItem("pv-audio-20261028235429", "1"); } }catch(e){} };
+      const ask = () => { try{ if(!localStorage.getItem("pv-audio-20261029001417") && navigator.serviceWorker.controller){ navigator.serviceWorker.controller.postMessage("precache-audio"); localStorage.setItem("pv-audio-20261029001417", "1"); } }catch(e){} };
       if(navigator.serviceWorker.controller) ask(); else navigator.serviceWorker.addEventListener("controllerchange", ask);
     }).catch(() => {});
   });
